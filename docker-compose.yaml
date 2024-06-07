@@ -1,0 +1,70 @@
+---
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest-alpine
+    container_name: clickhouse
+    hostname: clickhouse
+    ports:
+      - "8123:8123" # http clickhouse
+      - "9000:9000" # tcp clickhouse
+      - "9363:9363" # prometheus /metrics
+    volumes:
+      - clickhouse:/var/lib/clickhouse
+      - ./clickhouse-config.xml:/etc/clickhouse-server/config.xml
+    restart: unless-stopped
+    healthcheck:
+      test: wget --spider http://clickhouse:8123/ping > /dev/null 2>&1 || exit 1
+      timeout: 5s
+      interval: 5s
+      retries: 5
+    networks:
+      - clickhouse
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otelcol
+    hostname: otelcol
+    command:
+      - "--config=/etc/otelcol-contrib/config.yaml"
+      - "--set=service.telemetry.logs.level=info" # debug
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol-contrib/config.yaml
+    restart: unless-stopped
+    ports:
+      - "4317:4317" # otlp
+      - "24224:24224" # fluentd forwarder
+      - "13133:13133" # health check
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - clickhouse
+
+    # Log generator
+  log-generator:
+    image: nickytd/log-generator:latest
+    container_name: log-generator
+    hostname: log-generator
+    environment:
+      - LOGS_COUNT=10
+      - LOGS_WAIT=1s
+    logging:
+      driver: fluentd
+      options:
+        mode: non-blocking
+        # Allow time for otel-collector to spin up, then forward fluentd logs to the fluentforwarder receiver.
+        fluentd-async-connect: "true"
+        # Use nanosecond precision
+        fluentd-sub-second-precision: "true"
+        # Do not use the service name otelcol:24224, use the host.docker.internal address instead.
+        fluentd-address: "host.docker.internal:24224"
+    depends_on:
+      - otelcol
+    networks:
+      - clickhouse
+
+networks:
+  clickhouse:
+
+volumes:
+  clickhouse:
