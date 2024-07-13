@@ -64,6 +64,27 @@ services:
     networks:
       - clickhouse
 
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    environment:
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_LOG_LEVEL=warn
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+    volumes:
+      - ./grafana-ds.yaml:/etc/grafana/provisioning/datasources/grafana-ds.yaml
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - clickhouse
+
 networks:
   clickhouse:
 
